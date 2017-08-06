@@ -28,7 +28,17 @@
 using namespace std;
 
 
-
+typedef struct arpt{
+	u_short hrd = htons(ARPHRD_ETHER);
+	u_short pro = htons(ETH_P_IP);
+	u_char hln = ETHER_ADDR_LEN;
+	u_char pln = sizeof(in_addr_t);
+	u_short op;
+	u_char sha[6];
+	u_long spa;
+	u_char tha[6];
+	u_long tpa;
+}__attribute__((packed)) arp_t;
 
 void get_my_mac(char *interface, u_int8_t *mac, sockaddr_in *my_ip){
 
@@ -75,41 +85,32 @@ void get_my_mac(char *interface, u_int8_t *mac, sockaddr_in *my_ip){
 
 class arp{
 private:
-	u_short hrd = htons(ARPHRD_ETHER);
-	u_short pro = htons(ETH_P_IP);
-	u_char hln = ETHER_ADDR_LEN;
-	u_char pln = sizeof(in_addr_t);
-	u_short op;
-	u_char sha[6];
-	u_long spa;
-	u_char tha[6];
-	u_long tpa;
 
 public:
+#pragma pack(push, 1)
+	arp_t a;
 	arp(){
 
 	}
-	arp(u_short sop, u_char **ssha, in_addr sspa, u_char **stha, in_addr stpa){
-		op = htons(sop); 
+	arp(u_short sop, u_char *ssha, sockaddr_in sspa, u_char *stha, sockaddr_in stpa){
+		a.op = htons(sop); 
 
-		memcpy(sha, *ssha, ETH_ALEN);
-		memcpy(&spa, &sspa, IP_SIZE);
-		memcpy(tha, *stha, ETH_ALEN);
-		memcpy(&tpa, &stpa, IP_SIZE);
+		memcpy(&a.sha, ssha, ETH_ALEN);
+		memcpy(&a.spa, &sspa.sin_addr, IP_SIZE);
+		memcpy(&a.tha, stha, ETH_ALEN);
+		memcpy(&a.tpa, &stpa.sin_addr, IP_SIZE);
 	}
-};
 
-
+}__attribute__((packed));
+`
 class ether{
-public:
-
-//private:
+private:
 	u_int8_t ether_dhost[ETH_ALEN];
 	u_int8_t ether_shost[ETH_ALEN];
 	u_int16_t ether_type;
 
 
-//public:
+public:
 	ether(){
 
 	}
@@ -118,8 +119,7 @@ public:
 		memcpy(ether_shost, *shost, ETH_ALEN);
 		ether_type = type;
 	}
-
-};
+}__attribute__((packed));
 
 class pcap{
 public:
@@ -191,7 +191,7 @@ public:
 
 	}
 
-};
+}__attribute__((packed));
 
 
 
@@ -207,7 +207,7 @@ class sniff{
 	ether *eth;
 	arp *arph;
 	pcap *p;
-	u_char arp_packet[ETHER_HEAD_LEN + ARP_LEN];
+	u_char arp_packet[ETHER_HEAD_LEN + ARP_LEN]; 
 	u_char *recv_packet;
 	u_short send_ip; u_char sender_mac[ETH_ALEN];
 	u_short target_ip; u_char target_mac[ETH_ALEN];
@@ -216,21 +216,20 @@ public:
 	void ethernet_data_intialize(u_int8_t *dhost, u_int8_t *shost, u_int16_t type){
 		eth = new ether(&dhost, &shost, type);
 	}
-	void arp_data_initialize(u_short sop, u_int8_t *ssha, in_addr sspa, u_int8_t *stha, in_addr stpa){
-		arph = new arp(sop, &ssha, sspa, &stha, stpa);
+	void arp_data_initialize(u_short sop, u_int8_t *ssha, sockaddr_in sspa, u_int8_t *stha, sockaddr_in stpa){
+		arph = new arp(sop, ssha, sspa, stha, stpa);
 	}
 
 	void packet_send_for_initialize(char *interface){
 		memcpy(arp_packet, eth, ETHER_HEAD_LEN);
-		memcpy(arp_packet+ETHER_HEAD_LEN, arph, ARP_LEN);
+		memcpy(arp_packet + ETHER_HEAD_LEN, arph, ARP_LEN);
+		//memcpy(arp_packet + ETHER_HEAD_LEN, arph, sizeof(u_short));
 
 		p = new pcap(interface);
 		p->pcap_arp_sniff_initialize();
 		recv_packet = p->pcap_arp_sniff_initialize_sendpacket(arp_packet, "arp");
 	}
 };
-
-
 
 
 int main(int argc, char* argv[]){
@@ -256,7 +255,7 @@ int main(int argc, char* argv[]){
 
 	sniff s;
 	s.ethernet_data_intialize(mac, broadcast, htons(ETHERTYPE_ARP));
-	s.arp_data_initialize(htons(0x0100), mac, my_ip.sin_addr, broadcast, target_ip.sin_addr);
+	s.arp_data_initialize(htons(0x0100), mac, my_ip, broadcast, sender_ip);
 	s.packet_send_for_initialize(interface);
 
 	return 0;
