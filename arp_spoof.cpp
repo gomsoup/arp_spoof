@@ -3,16 +3,21 @@
 #include <unistd.h>
 #include <cstdlib>
 #include <cstring>
+#include <cstdint>
 
 #include <arpa/inet.h>
 #include <sys/ioctl.h>
 
 #include <netinet/if_ether.h>
-
 #include <net/ethernet.h>
 #include <net/if_arp.h>
 #include <net/if.h>
-#include <cstdint>
+#include <ifaddrs.h>
+
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+
 
 #include <pcap.h>
 
@@ -25,7 +30,7 @@ using namespace std;
 
 
 
-void get_my_mac(char *interface, u_int8_t *mac){
+void get_my_mac(char *interface, u_int8_t *mac, sockaddr_in *my_ip){
 
 	/*  Get My MAC Address
 		coded by https://stackoverflow.com/questions/1779715/how-to-get-mac-address-of-your-machine-using-a-c-program */
@@ -35,22 +40,38 @@ void get_my_mac(char *interface, u_int8_t *mac){
 	u_int8_t target_mac[ETH_ALEN] = {0x00, }; // for inet_ntop
 	u_int8_t broadcast[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
+
+	char ip[INET_ADDRSTRLEN];
+
 	memset(&ifr, 0, sizeof(ifr));
 	int fd = socket(AF_INET, SOCK_DGRAM, 0);
 	ifr.ifr_addr.sa_family = AF_INET;
-	strncpy(ifr.ifr_name, interface, sizeof(ifr.ifr_name));
+	
+	char *buf;
+	void *bufptr = NULL;
 
+	strncpy(ifr.ifr_name, interface, sizeof(ifr.ifr_name));
 	if ((ioctl(fd, SIOCGIFHWADDR, &ifr) == 0) && fd != -1){
 		memcpy(mac, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
 		printf("MAC Device : %s\n", interface);
-		printf("Mac : %.2X:%.2X:%.2X:%.2X:%.2X:%.2X\n\n" , mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+		printf("Mac : %.2X:%.2X:%.2X:%.2X:%.2X:%.2X\n" , mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 	}
 	else{
 		printf("Get MAC address failure\n");
 		exit(1);
 	}
-}
 
+	if((ioctl(fd, SIOCGIFADDR, &ifr)) == 0){
+		buf = inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr);
+		inet_aton(buf, &my_ip->sin_addr);
+
+		printf("IP : %s\n\n", buf);
+	}
+	else{
+		printf("Get IP address failed\n");
+		exit(1);
+	}
+}
 
 class arp{
 private:
@@ -120,7 +141,6 @@ public:
 	}
 	pcap(char *interface){
 		this->interface = interface;
-		get_my_mac(interface, mac);
 	}
 
 
@@ -134,7 +154,7 @@ public:
 		}
 	}
 
-	u_char *pcap_arp_sniff_initialize_sendpacket(u_char *packet, char *filter_type){
+	u_char pcap_arp_sniff_initialize_sendpacket(u_char *packet, char *filter_type){
 		if (pcap_sendpacket(p, packet, (ETHER_HEAD_LEN + ARP_LEN)) == -1){
 			cout << "pcap_sendpacket failed" << endl;
 			exit(1);
@@ -195,11 +215,6 @@ class sniff{
 public:
 	void ethernet_data_intialize(u_int8_t *dhost, u_int8_t *shost, u_int16_t type){
 		eth = new ether(&dhost, &shost, type);
-
-		cout << "eth->dhost" << hex << eth->ether_dhost << endl;
-		cout << "eth->shost" << hex << eth->ether_shost << endl;
-		cout << "eth->ether_type" << hex << eth->ether_type << endl;
-
 	}
 	void arp_data_initialize(u_short sop, u_int8_t *ssha, in_addr sspa, u_int8_t *stha, in_addr stpa){
 		arph = new arp(sop, &ssha, sspa, &stha, stpa);
@@ -212,7 +227,6 @@ public:
 		p = new pcap(interface);
 		p->pcap_arp_sniff_initialize();
 		recv_packet = p->pcap_arp_sniff_initialize_sendpacket(arp_packet, "arp");
-
 	}
 };
 
@@ -227,19 +241,22 @@ int main(int argc, char* argv[]){
 	} 
 
 	char *interface = argv[1];
+	char *buf;
 	u_int8_t mac[ETH_ALEN] = {0x00, }; 
 	u_int8_t broadcast[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
 	struct sockaddr_in sender_ip;
 	struct sockaddr_in target_ip;
+	struct sockaddr_in my_ip;
+
+	get_my_mac(interface, mac, &my_ip);
 
 	inet_aton(argv[2], &sender_ip.sin_addr);
 	inet_aton(argv[3], &target_ip.sin_addr);
-	get_my_mac(interface, mac);
 
 	sniff s;
 	s.ethernet_data_intialize(mac, broadcast, htons(ETHERTYPE_ARP));
-	s.arp_data_initialize(htons(ARPOP_REQUEST), mac, sender_ip.sin_addr, broadcast, target_ip.sin_addr);
+	s.arp_data_initialize(htons(0x0100), mac, my_ip.sin_addr, broadcast, target_ip.sin_addr);
 	s.packet_send_for_initialize(interface);
 
 	return 0;
