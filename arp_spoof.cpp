@@ -29,15 +29,15 @@ using namespace std;
 
 
 typedef struct arpt{
-	u_short hrd = htons(ARPHRD_ETHER);
-	u_short pro = htons(ETH_P_IP);
-	u_char hln = ETHER_ADDR_LEN;
-	u_char pln = sizeof(in_addr_t);
-	u_short op;
-	u_char sha[6];
-	u_long spa;
-	u_char tha[6];
-	u_long tpa;
+	uint16_t hrd = htons(ARPHRD_ETHER);
+	uint16_t pro = htons(ETH_P_IP);
+	uint8_t hln = ETHER_ADDR_LEN;
+	uint8_t pln = sizeof(in_addr_t);
+	uint16_t op;
+	uint8_t sha[6];
+	uint32_t spa;
+	uint8_t tha[6];
+	uint32_t tpa;
 }__attribute__((packed)) arp_t;
 
 void get_my_mac(char *interface, u_int8_t *mac, sockaddr_in *my_ip){
@@ -102,7 +102,7 @@ public:
 	}
 
 }__attribute__((packed));
-`
+
 class ether{
 private:
 	u_int8_t ether_dhost[ETH_ALEN];
